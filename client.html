@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+   <head>
+     <title>Chat site</title>
+      <script src="/socket.io/socket.io.js"></script>
+
+      <script type ="text/javascript">
+      var socketio = io.connect();
+      let usr;
+      let passwordRoom;
+
+      socketio.on("message_to_client",function(data) {
+         let roomer = data["roomer"];
+         if (roomer === "true") {
+           document.getElementById("chatlog").innerHTML = "";
+         }
+         //Append an HR thematic break and the escaped HTML of the new message
+         document.getElementById("chatlog").appendChild(document.createElement("hr"));
+         document.getElementById("chatlog").appendChild(document.createTextNode(data['message']));
+      });
+
+      //to clear the page
+      socketio.on("clear_room", function(data) {
+          document.getElementById("chatlog").innerHTML = "";
+          document.getElementById("chatlog").appendChild(document.createElement("hr"));
+          document.getElementById("chatlog").appendChild(document.createTextNode(data['message']));
+      });
+      //for private messaging
+      socketio.on("privateMessage", function(data){
+          let sender = data["sender"];
+          let receiver = data["receiver"];
+          let message = data["message"];
+          let coloredMessage = document.createTextNode("PRIVATE MESSAGE from " + sender + ": " + message);
+          let messageElement = document.createElement('p');
+          messageElement.style.color = data["color"];
+          messageElement.appendChild(coloredMessage);
+          if (usr === sender) {
+            document.getElementById("chatlog").appendChild(document.createElement("hr"));
+            document.getElementById("chatlog").appendChild(messageElement);
+
+          }
+          if (usr === receiver){
+            document.getElementById("chatlog").appendChild(document.createElement("hr"));
+            document.getElementById("chatlog").appendChild(messageElement);
+          }
+      });
+
+      socketio.on("receiveBannedUser", function(data) {
+        //emmitted to everyone in the room
+         let banUser = data["user"];
+         let banOrKick = data["banOrKick"];
+         if (usr === banUser) {
+           socketio.emit('banUser', {banOrKick: banOrKick});
+         }
+      });
+
+      socketio.on("username_set", function(data){
+        let username = data["user"];
+        passwordRoom = data["roomPassword"];
+        if (data["boolean"] === "true") {
+            let buttons = document.getElementById("buttons");
+            buttons.style.display = "inline";
+            let roomShow = document.getElementById("rooms");
+            roomShow.style.display = "inline";
+            let changeRoom = document.getElementById("changeRoom");
+            changeRoom.style.display = "inline";
+            let userBan = document.getElementById("banUsers");
+            userBan.style.display = "inline";
+            let userKick = document.getElementById("kickUsers");
+            userKick.style.display = "inline";
+        }
+      });
+
+      //runs to update users and display
+      socketio.on("updateUsers", function(data) {
+        document.getElementById("users").innerHTML = " ";
+        let roomUsers = data["users"];
+        for (let i = 0; i < roomUsers.length; i++) {
+          document.getElementById("users").appendChild(document.createElement("hr"));
+          document.getElementById("users").appendChild(document.createTextNode(roomUsers[i]));
+        }
+      });
+
+      //runs to update rooms and display
+      socketio.on("updateRooms", function(data){
+        document.getElementById("rooms").innerHTML = " ";
+        let roomsDisplay = data["rooms"];
+        for (let i = 0; i < roomsDisplay.length; i++) {
+          document.getElementById("rooms").appendChild(document.createElement("hr"));
+          //appending a list with the name and the radio button
+          let newLi = document.createElement("li");
+          newLi.appendChild(document.createTextNode(roomsDisplay[i]));
+          let radio = document.createElement("input");
+          radio.type = "radio";
+          radio.value = roomsDisplay[i];
+          radio.name = "which_room";
+          newLi.appendChild(radio);
+          document.getElementById("rooms").appendChild(newLi);
+        }
+      });
+
+      socketio.on("passwordRoom", function(data){
+         let password = prompt("Please enter the room password", "password");
+         let roomName = data["roomName"];
+         socketio.emit("createPrivateRoom", {roomName: roomName, user:usr, password: password});
+      });
+
+      socketio.on("checkPassword", function(data){
+         passwordRoom = data["roomPassword"];
+      });
+      //received from the destroying checks
+      socketio.on("destroyer", function(data){
+         socketio.emit("destroyingRoom");
+      });
+
+      function sendMessage(){
+         let msg = document.getElementById("message_input").value;
+         socketio.emit("message_to_server", {message:msg});
+      }
+
+      function quickReply(val){
+        let msg = val;
+        socketio.emit("message_to_server", {message:msg});
+      }
+
+      function setUsername(){
+        usr = document.getElementById("username").value;
+        socketio.emit("setUsername", {username:usr});
+       }
+
+      function createRoom(){
+        let newRoom = document.getElementById("newRoom").value;
+        socketio.emit("createRoom", {newRoom: newRoom, user: usr, password: "open"});
+      }
+
+      function privateRoom(){
+         let privateRoom = document.getElementById("newRoom").value;
+         socketio.emit("createRoom", {newRoom: newRoom, user: usr, password: "protected", privateRoom: privateRoom});
+       }
+
+      function switchRoom(){
+        //checking the radio button clicked
+        let whichRoom;
+        let checkRoom = document.getElementsByName("which_room");
+        for (let i = 0; i < checkRoom.length; i++) {
+          if (checkRoom[i].checked) {
+              whichRoom = checkRoom[i].value;
+            }
+        }
+        let check = true;
+        //should also check whether the room has a password or not
+        // if it does, prompt the user for a password
+        for (let i = 0; i < passwordRoom.length; i++){
+          if (passwordRoom[i] === whichRoom){
+            //prompt the user for a password
+            let checkPass = prompt("Please enter the room password", "password");
+            socketio.emit("switchRooms", {roomVal: whichRoom, password: checkPass, passwordValue: "protected"});
+            check = false;
+          }
+        }
+        if (check){
+          socketio.emit("switchRooms", {roomVal: whichRoom, passwordValue: "open"});
+        }
+      }
+
+      function destroyRoom(){
+        //checking which radio button clicked
+        let whichRoom;
+        let checkRoom = document.getElementsByName("which_room");
+        for (let i = 0; i < checkRoom.length; i++) {
+          if (checkRoom[i].checked) {
+              whichRoom = checkRoom[i].value;
+            }
+        }
+        socketio.emit("destroyRoom", {roomVal: whichRoom});
+      }
+
+      function banUsers(){
+        let ban = document.getElementById("bannedUser").value;
+        socketio.emit("banningUsers", {ban: ban, user: usr, banOrKick: true});
+      }
+
+      function kickUsers(){
+        let kick = document.getElementById("kickedUser").value;
+        socketio.emit("banningUsers", {ban: kick, user: usr, banOrKick: false});
+        //same code as banning pretty much except this person won't be added to the banned users list in the room object
+      }
+
+      function privateMessage(){
+        let person = prompt("Who would you like to send a private message to?", "username");
+        let color = prompt("What color would you like your message to be?", "ex: blue (must be lowercase)");
+        console.log(color);
+        let message = document.getElementById("message_input").value;
+        socketio.emit("privateMessage", {person: person, message: message, color: color});
+      }
+  </script>
+    <body style="background-color: #f45541;">
+     <div id="login">
+       <input type="text" id="username"/>
+       <label for="username">Enter your nickname</label>
+       <button onclick="setUsername()">Enter</button>
+     </div>
+     <div style="float:left;width:200px;border-right:1px solid black;height:300px;padding:10px;">
+        <b>ROOMS</b>
+        <div id = "rooms"></div>
+        <div id = "changeRoom">
+          <button onclick="switchRoom()">Switch Room</button>
+          <button onclick="destroyRoom()">Destroy Room</button>
+        </div>
+     </div>
+     <div style="float:left;width:500px;height:250px;padding:10px;">
+       <div id = "buttons">
+           <input type="text" id="message_input"/>
+           <button onclick="sendMessage()">send message</button>
+           <button onclick="privateMessage()">private message</button>
+           <br><br>
+           <b>QUICK REPLY</b><br>
+           <button onclick="quickReply(this.value)" value="Hi!">Hi!</button>
+           <button onclick="quickReply(this.value)" value="Bye!">Bye!</button>
+           <button onclick="quickReply(this.value)" value="How are you?">How are you?</button>
+           <button onclick="quickReply(this.value)" value="I'm good!">I'm good!</button>
+           <button onclick="quickReply(this.value)" value="Thanks!">Thanks!</button>
+           <button onclick="quickReply(this.value)" value="You're welcome!">You're welcome!</button>
+           <button onclick="quickReply(this.value)" value="Trump sucks">Trump sucks.</button>
+           <br><br>
+           <input type="text" id="newRoom"/>
+           <button onclick="createRoom()">Create Room</button>
+           <button onclick="privateRoom()">Create Private Room</button>
+       </div>
+       <div id= "chatlog"></div>
+    </div>
+    <div style="float:right; width: 250px; border-left: 1px solid black; height: 300px; padding:10px;">
+      <div id = "banUsers">
+        <input type="text" id="bannedUser"/>
+        <button onclick="banUsers()">Ban User</button>
+      </div>
+      <div id = "kickUsers">
+        <input type="text" id="kickedUser"/>
+        <button onclick="kickUsers()">Kick User</button>
+      </div>
+      <br><br>
+      <b>Users in Room</b>
+      <div id = "users"></div>
+    </div>
+    <script>
+       let buttons = document.getElementById("buttons");
+       buttons.style.display = "none";
+       let roomShow = document.getElementById("rooms");
+       roomShow.style.display = "none";
+       let changeRoom = document.getElementById("changeRoom");
+       changeRoom.style.display = "none";
+       let userBan = document.getElementById("banUsers");
+       userBan.style.display = "none";
+       let userKick = document.getElementById("kickUsers");
+       userKick.style.display = "none";
+    </script>
+   </body>
+</html>
